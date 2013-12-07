@@ -5,6 +5,7 @@ require 'spotify_web/schema/playlist4.pb'
 
 module SpotifyWeb
   # Represents a user who has authorized with the Spotify service
+  MAX_REDIRECTS = 10
   class AuthorizedUser < User
     # The password associated with the username registered with on Spotify.
     # @return [String]
@@ -48,44 +49,54 @@ module SpotifyWeb
     # @raise [SpotifyWeb::Error] if the command fails
     def login
       # Look up the init options
-      request = EventMachine::HttpRequest.new('https://play.spotify.com/')
-      response = request.get(:head => {'User-Agent' => USER_AGENT})
-
-      if response.response_header.successful?
-        json = response.response.match(/Spotify\.Web\.Login\(document, (\{.+\}),[^\}]+\);/)[1]
-        options = JSON.parse(json)
-
-        # Authenticate the user
-        request = EventMachine::HttpRequest.new('https://play.spotify.com/xhr/json/auth.php')
-        response = request.post(
-          :body => {
-            :username => username,
-            :password => password,
-            :type => 'sp',
-            :secret => options['csrftoken'],
-            :trackingId => options['trackingId'],
-            :landingURL => options['landingURL'],
-            :referrer => options['referrer'],
-            :cf => nil
-          },
-          :head => {'User-Agent' => USER_AGENT}
-        )
+      redirects = 0
+      performed = false
+      url = "https://play.spotify.com/redirect/facebook/notification.php?album=http%3A%2F%2Fopen.spotify.com%2Falbum%2F2mCuMNdJkoyiXFhsQCLLqw&song=http%3A%2F%2Fopen.spotify.com%2Ftrack%2F6JEK0CvvjDjjMUBFoXShNZ"
+      while !performed and redirects < MAX_REDIRECTS
+        request = EventMachine::HttpRequest.new(url)
+        response = request.get(:head => {'User-Agent' => USER_AGENT})
 
         if response.response_header.successful?
-          data = JSON.parse(response.response)
+          json = response.response.match(/Spotify\.Web\.Login\(document, (\{.+\}),[^\}]+\);/)[1]
+          options = JSON.parse(json)
+          performed = true
+          # Authenticate the user
+          request = EventMachine::HttpRequest.new('https://play.spotify.com/xhr/json/auth.php')
+          response = request.post(
+              :body => {
+                  :username => username,
+                  :password => password,
+                  :type => 'sp',
+                  :secret => options['csrftoken'],
+                  :trackingId => options['trackingId'],
+                  :landingURL => options['landingURL'],
+                  :referrer => options['referrer'],
+                  :cf => nil
+              },
+              :head => {'User-Agent' => USER_AGENT}
+          )
 
-          if data['status'] == 'OK'
-            @settings = data['config']
+          if response.response_header.successful?
+            data = JSON.parse(response.response)
+
+            if data['status'] == 'OK'
+              @settings = data['config']
+            else
+              error = "Unable to authenticate (#{data['message']})"
+            end
           else
-            error = "Unable to authenticate (#{data['message']})"
+            error = "Unable to authenticate (#{response.response_header.status})"
           end
         else
-          error = "Unable to authenticate (#{response.response_header.status})"
+          if response.response_header.status == 302
+            redirects += 1
+            url = response.response_header.location
+          else
+            break
+          end
         end
-      else
-        error = "Landing page unavailable (#{response.response_header.status})"
       end
-
+      error = "Landing page unavailable (#{response.response_header.status})" unless performed
       raise(ConnectionError, error) if error
 
       true
