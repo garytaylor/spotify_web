@@ -47,7 +47,7 @@ module SpotifyWeb
     def load
       path = uri_id == 'starred' ? uri_id : "playlist/#{uri_id}"
       response = api('request',
-        :uri => "hm://playlist/user/#{user.username}/#{path}?from=0&length=100",
+        :uri => "hm://playlist/user/#{user.username}/#{path}?from=0&length=500",
         :response_schema => Schema::Playlist4::SelectedListContent
       )
       result = response['result']
