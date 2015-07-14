@@ -57,7 +57,7 @@ module SpotifyWeb
         response = request.get(:head => {'User-Agent' => USER_AGENT})
 
         if response.response_header.successful?
-          json = response.response.match(/Spotify\.Web\.Login\(document, (\{.+\}),[^\}]+\);/)[1]
+          json = response.response.match(/Spotify\.Web\.Login\(\s*document,\s*(\{.+\}),[^\}]+\);/)[1]
           options = JSON.parse(json)
           performed = true
           # Authenticate the user
